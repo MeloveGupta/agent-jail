@@ -747,3 +747,14 @@ resetPolicyBtn.addEventListener('click', () => {
 
 // Initialize on page load
 loadInitialPolicy();
+
+// Expose state and controls on window for developer console and automated testing
+window.agentJail = {
+  appState,
+  STATES,
+  selectScenario,
+  runScenario,
+  savePolicyAndRerun,
+  resetPolicy,
+  setState
+};
