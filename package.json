@@ -1,6 +1,7 @@
 {
   "name": "agent-jail",
   "version": "1.0.0",
+  "description": "Policy enforcement layer for AI agent tool execution using AWS Cedar",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
