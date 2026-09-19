@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node test/verify-cedar.js && node test/verify-runtime.js && node test/verify-server.js && node test/verify-frontend.js && node test/verify-integration.js && node test/verify-security.js"
+    "test": "node test/verify-cedar.js && node test/verify-runtime.js && node test/verify-server.js && node test/verify-frontend.js && node test/verify-integration.js && node test/verify-security.js && node test/verify-api-boundary.js"
   },
   "dependencies": {
     "@cedar-policy/cedar-wasm": "^4.0.0",

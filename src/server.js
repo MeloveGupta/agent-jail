@@ -72,9 +72,9 @@ const SUPPORTED_SCENARIOS = ['happy', 'catastrophe', 'injection'];
 // POST /api/run - Executes agent scenario and returns full trace
 app.post('/api/run', async (req, res, next) => {
   const scenario = req.body?.scenario;
-  if (!scenario || !SUPPORTED_SCENARIOS.includes(scenario)) {
+  if (typeof scenario !== 'string' || !SUPPORTED_SCENARIOS.includes(scenario)) {
     return res.status(400).json({
-      error: `Unknown scenario: ${scenario || 'undefined'}`
+      error: `Unknown scenario: ${typeof scenario === 'string' && scenario ? scenario : 'undefined'}`
     });
   }
 
@@ -88,7 +88,10 @@ app.post('/api/run', async (req, res, next) => {
 
 // Generic error handler (clean JSON response without exposing raw stack traces)
 app.use((err, req, res, next) => {
-  res.status(500).json({ error: err.message || 'Internal Server Error' });
+  const status = typeof err.status === 'number'
+    ? err.status
+    : (typeof err.statusCode === 'number' ? err.statusCode : 500);
+  res.status(status).json({ error: err.message || 'Internal Server Error' });
 });
 
 let server;
