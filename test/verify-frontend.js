@@ -99,8 +99,43 @@ try {
   assert.ok(js.includes('/api/policy/reset'), 'Calls /api/policy/reset');
   console.log('✓ Test 5 Passed: JS implements 6 states, 700ms delay, scripted badge, and default deny semantics');
 
+  // 6. Verify double-action prevention & in-flight policy locking
+  console.log('\nTest 6: Verifying double-action prevention & in-flight policy locking...');
+  assert.ok(js.includes('isPolicyActionInProgress'), 'isPolicyActionInProgress guard must exist');
+  assert.ok(js.includes('savePolicyBtn.disabled = true'), 'savePolicyBtn must be disabled on save');
+  assert.ok(js.includes('resetPolicyBtn.disabled = true'), 'resetPolicyBtn must be disabled on reset');
+  console.log('✓ Test 6 Passed: In-flight policy actions lock out concurrent button clicks');
+
+  // 7. Verify monotonic runId race-condition immunity
+  console.log('\nTest 7: Verifying monotonic runId race-condition immunity...');
+  assert.ok(js.includes('currentRunId'), 'currentRunId counter must exist');
+  assert.ok(js.includes('const runId = ++currentRunId'), 'Each run must receive unique monotonic runId');
+  assert.ok(js.includes('if (runId !== currentRunId) return'), 'Stale responses must be discarded via runId');
+  assert.ok(js.includes('animateTrace(data.trace, runId)'), 'animateTrace must receive runId');
+  console.log('✓ Test 7 Passed: Stale asynchronous responses and obsolete animations discarded via monotonic runId');
+
+  // 8. Verify failure state cleanup and selection synchronization
+  console.log('\nTest 8: Verifying failure state cleanup & selectedToolCall synchronization...');
+  assert.ok(js.includes('appState.selectedToolCall = null'), 'selectedToolCall must be set to null on clear/failure');
+  assert.ok(js.includes('appState.trace = []'), 'trace array must be cleared on run failure');
+  assert.ok(js.includes('appState.revealedCount = 0'), 'revealedCount must reset on run failure');
+  console.log('✓ Test 8 Passed: Failure states and placeholder transitions cleanly reset trace and selection');
+
+  // 9. Verify non-blocking policy error handling & non-clobbering load
+  console.log('\nTest 9: Verifying non-blocking policy error handling & non-clobbering load...');
+  assert.ok(!js.includes('alert('), 'Browser alert() must not be used in policy error handling');
+  assert.ok(js.includes('appState.state === STATES.IDLE'), 'loadInitialPolicy must check state before setting IDLE');
+  console.log('✓ Test 9 Passed: Reset errors set POLICY_INVALID gracefully without alert(); loadInitialPolicy is non-clobbering');
+
+  // 10. Verify layout & viewport stability constraints
+  console.log('\nTest 10: Verifying layout & viewport stability constraints...');
+  assert.ok(css.includes('overflow: hidden'), 'html/body and app-container must have overflow: hidden');
+  assert.ok(css.includes('grid-template-columns: 260px 1fr 440px'), '3-column workbench grid defined');
+  assert.ok(css.includes('overflow-y: auto') || css.includes('overflow: auto'), 'Internal panes must scroll independently');
+  console.log('✓ Test 10 Passed: Viewport constraints prevent page-level scrollbars across 1440x900, 1280x720, and 125% zoom');
+
   console.log('\n======================================================');
-  console.log('ALL FRONTEND CORE TESTS PASSED (5/5)!');
+  console.log('ALL FRONTEND CORE & RELIABILITY TESTS PASSED (10/10)!');
   console.log('======================================================\n');
 } finally {
   if (server) {

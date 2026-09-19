@@ -23,6 +23,9 @@ const appState = {
   selectedToolCall: null
 };
 
+let currentRunId = 0;
+let isPolicyActionInProgress = false;
+
 // DOM Elements
 const stateBadge = document.getElementById('state-badge');
 const scenarioCards = document.querySelectorAll('.scenario-card');
@@ -108,7 +111,9 @@ async function loadInitialPolicy() {
     const data = await res.json();
     appState.activePolicy = data.text || '';
     policyTextarea.value = appState.activePolicy;
-    setState(STATES.IDLE);
+    if (appState.state === STATES.IDLE) {
+      setState(STATES.IDLE);
+    }
   } catch (err) {
     console.error('Error fetching initial policy:', err);
     setState(STATES.POLICY_INVALID, { error: err.message });
@@ -341,6 +346,7 @@ function renderArgsTable(args) {
 // Right-Pane: Render Decision & Evidence Panel
 function renderDecisionPanel(entry) {
   if (!entry || entry.kind !== 'tool_call') {
+    appState.selectedToolCall = null;
     decisionPanel.innerHTML = `
       <div class="decision-placeholder">
         <p>Select a tool call in the transcript to inspect its authorization decision, policy reason, and semantic context evidence.</p>
@@ -531,21 +537,23 @@ function renderDecisionPanel(entry) {
 }
 
 // Progressive Trace Animation (~700ms per visible entry)
-async function animateTrace(trace) {
+async function animateTrace(trace, runId) {
   setState(STATES.ANIMATING);
   transcriptList.innerHTML = '';
   appState.revealedCount = 0;
   transcriptCount.textContent = `0 of ${trace.length} entries`;
 
   for (let i = 0; i < trace.length; i++) {
-    if (appState.state !== STATES.ANIMATING) {
-      break; // Aborted
+    if (runId !== currentRunId || appState.state !== STATES.ANIMATING) {
+      break; // Aborted by newer run or state change
     }
 
     const entry = trace[i];
     const elem = createTraceEntryElement(entry, i);
     transcriptList.appendChild(elem);
-    elem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (typeof elem.scrollIntoView === 'function') {
+      elem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 
     appState.revealedCount = i + 1;
     transcriptCount.textContent = `${appState.revealedCount} of ${trace.length} entries`;
@@ -563,18 +571,19 @@ async function animateTrace(trace) {
     }
   }
 
-  if (appState.state === STATES.ANIMATING) {
+  if (runId === currentRunId && appState.state === STATES.ANIMATING) {
     setState(STATES.COMPLETE);
   }
 }
 
 // Execute Scenario Run
 async function runScenario(scenarioId) {
-  // Prevent duplicate execution while busy
-  if (appState.state === STATES.RUNNING || appState.state === STATES.ANIMATING) {
+  // Prevent duplicate execution while busy or policy action in progress
+  if (appState.state === STATES.RUNNING || appState.state === STATES.ANIMATING || isPolicyActionInProgress) {
     return;
   }
 
+  const runId = ++currentRunId;
   setState(STATES.RUNNING);
 
   // Clear previous transcript
@@ -589,6 +598,8 @@ async function runScenario(scenarioId) {
       body: JSON.stringify({ scenario: scenarioId })
     });
 
+    if (runId !== currentRunId) return;
+
     if (!res.ok) {
       let errMsg = `HTTP ${res.status}`;
       try {
@@ -599,14 +610,21 @@ async function runScenario(scenarioId) {
     }
 
     const data = await res.json();
+    if (runId !== currentRunId) return;
+
     if (!data.trace || !Array.isArray(data.trace)) {
       throw new Error('Server response did not include a valid trace array');
     }
 
     appState.trace = data.trace;
-    await animateTrace(data.trace);
+    await animateTrace(data.trace, runId);
   } catch (err) {
+    if (runId !== currentRunId) return;
+
     console.error('Run failed:', err);
+    appState.trace = [];
+    appState.selectedToolCall = null;
+    appState.revealedCount = 0;
     transcriptList.innerHTML = '';
     transcriptCount.textContent = '0 entries';
     setState(STATES.RUN_FAILED, { error: err.message });
@@ -615,9 +633,15 @@ async function runScenario(scenarioId) {
 
 // Save Policy & Re-run
 async function savePolicyAndRerun() {
-  if (appState.state === STATES.RUNNING || appState.state === STATES.ANIMATING) {
+  if (appState.state === STATES.RUNNING || appState.state === STATES.ANIMATING || isPolicyActionInProgress) {
     return;
   }
+
+  isPolicyActionInProgress = true;
+  savePolicyBtn.disabled = true;
+  resetPolicyBtn.disabled = true;
+  runBtn.disabled = true;
+  policyTextarea.readOnly = true;
 
   const text = policyTextarea.value;
 
@@ -629,6 +653,7 @@ async function savePolicyAndRerun() {
     });
 
     if (res.status === 400) {
+      isPolicyActionInProgress = false;
       const errData = await res.json();
       setState(STATES.POLICY_INVALID, { error: errData.error || 'Failed to parse Cedar policy' });
       return;
@@ -641,20 +666,26 @@ async function savePolicyAndRerun() {
     const data = await res.json();
     appState.activePolicy = data.text;
     policyError.classList.add('hidden');
+    isPolicyActionInProgress = false;
     
     // Save & re-run: re-run the selected scenario
     await runScenario(appState.selectedScenario);
   } catch (err) {
     console.error('Policy save error:', err);
+    isPolicyActionInProgress = false;
     setState(STATES.POLICY_INVALID, { error: err.message });
   }
 }
 
 // Reset Policy (does NOT auto-run)
 async function resetPolicy() {
-  if (appState.state === STATES.RUNNING || appState.state === STATES.ANIMATING) {
+  if (appState.state === STATES.RUNNING || appState.state === STATES.ANIMATING || isPolicyActionInProgress) {
     return;
   }
+
+  isPolicyActionInProgress = true;
+  resetPolicyBtn.disabled = true;
+  savePolicyBtn.disabled = true;
 
   try {
     const res = await fetch('/api/policy/reset', {
@@ -669,10 +700,12 @@ async function resetPolicy() {
     appState.activePolicy = data.text;
     policyTextarea.value = data.text;
     policyError.classList.add('hidden');
+    isPolicyActionInProgress = false;
     setState(STATES.IDLE);
   } catch (err) {
     console.error('Policy reset error:', err);
-    alert(`Failed to reset policy: ${err.message}`);
+    isPolicyActionInProgress = false;
+    setState(STATES.POLICY_INVALID, { error: `Failed to reset policy: ${err.message}` });
   }
 }
 
