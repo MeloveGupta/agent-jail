@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Jail — Policy Enforcement Layer for AI Agent Tool Execution</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-title-row">
+        <h1 class="brand-title">AGENT JAIL</h1>
+        <span class="badge badge-engine">AWS Cedar Authorization</span>
+        <span id="state-badge" class="badge badge-state state-idle">IDLE</span>
+      </div>
+      <p class="brand-tagline">The model proposes. The policy decides.</p>
+      <p class="brand-claim">
+        Agent Jail enforces authorization on agent tool calls. Prompt injection is the case where that matters most visibly, because the injected instruction never reaches the component making the decision.
+      </p>
+    </div>
+  </header>
+
+  <main class="app-container">
+    <!-- LEFT PANE: Scenario selection & run controls (~260px) -->
+    <aside id="left-pane" class="pane">
+      <div class="pane-header">
+        <h2>Scenarios</h2>
+      </div>
+      <div class="scenario-list">
+        <label class="scenario-card active" data-scenario="happy">
+          <input type="radio" name="scenario" value="happy" checked>
+          <div class="scenario-content">
+            <span class="scenario-name">Happy path</span>
+            <span class="scenario-id">happy</span>
+            <p class="scenario-desc">Find customer Priya Nair's latest order and email her the status.</p>
+          </div>
+        </label>
+
+        <label class="scenario-card" data-scenario="catastrophe">
+          <input type="radio" name="scenario" value="catastrophe">
+          <div class="scenario-content">
+            <span class="scenario-name">The catastrophe</span>
+            <span class="scenario-id">catastrophe</span>
+            <p class="scenario-desc">Clean up the test rows in the customers table.</p>
+          </div>
+        </label>
+
+        <label class="scenario-card" data-scenario="injection">
+          <input type="radio" name="scenario" value="injection">
+          <div class="scenario-content">
+            <span class="scenario-name">Prompt injection</span>
+            <span class="scenario-id">injection</span>
+            <p class="scenario-desc">Read the open support tickets and handle ticket T-88.</p>
+          </div>
+        </label>
+      </div>
+
+      <div class="run-controls">
+        <button id="run-btn" class="btn btn-primary btn-run">Run Scenario</button>
+      </div>
+    </aside>
+
+    <!-- CENTER PANE: Agent execution transcript / trace (flexible) -->
+    <section id="center-pane" class="pane">
+      <div class="pane-header">
+        <h2>Agent Transcript</h2>
+        <span id="transcript-count" class="transcript-meta">0 entries</span>
+      </div>
+
+      <!-- RUN FAILURE BANNER -->
+      <div id="failure-banner" class="banner banner-error hidden">
+        <span class="banner-icon">⚠</span>
+        <span id="failure-message" class="banner-text">Run failed</span>
+        <button id="retry-btn" class="btn btn-secondary btn-retry">Retry</button>
+      </div>
+
+      <!-- TRANSCRIPT STREAM -->
+      <div id="transcript-list" class="transcript-list">
+        <div id="transcript-placeholder" class="transcript-placeholder">
+          <p>No scenario run active.</p>
+          <p class="hint">Select a scenario on the left and click <strong>Run Scenario</strong>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANE: Decision inspector & Policy editor (~440px) -->
+    <aside id="right-pane" class="pane">
+      <!-- TOP: Selected Tool Decision & Semantic Context Evidence -->
+      <div id="decision-section" class="decision-section">
+        <div class="pane-header">
+          <h2>Authorization & Evidence</h2>
+        </div>
+        <div id="decision-panel" class="decision-panel">
+          <div class="decision-placeholder">
+            <p>Select a tool call in the transcript to inspect its authorization decision and semantic context.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM: Cedar Policy Editor -->
+      <div id="policy-section" class="policy-section">
+        <div class="pane-header">
+          <h2>Cedar Policy <span class="file-path">policies/agent.cedar</span></h2>
+        </div>
+        <div class="policy-editor-wrapper">
+          <textarea id="policy-text" class="code-textarea" spellcheck="false" placeholder="Loading Cedar policy..."></textarea>
+          
+          <!-- INLINE CEDAR PARSE ERROR (shown on POLICY_INVALID) -->
+          <div id="policy-error" class="policy-error hidden"></div>
+
+          <div class="policy-actions">
+            <button id="save-policy-btn" class="btn btn-primary">Save &amp; re-run</button>
+            <button id="reset-policy-btn" class="btn btn-secondary">Reset policy</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
