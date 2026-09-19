@@ -205,6 +205,10 @@ body {
   box-shadow: 0 0 0 1px var(--border-focus);
 }
 
+.scenario-card:focus-within {
+  border-color: var(--border-focus);
+}
+
 .scenario-card input[type="radio"] {
   margin-top: 4px;
   accent-color: var(--border-focus);
@@ -295,6 +299,11 @@ body {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 .btn-primary {
@@ -468,6 +477,10 @@ body {
   background-color: #1d232c;
 }
 
+.trace-tool-call:focus-visible {
+  outline: 2px solid var(--border-focus);
+}
+
 .tool-allow {
   border-left-color: var(--color-allow);
 }
@@ -591,7 +604,7 @@ body {
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--border-color);
-  min-height: 280px;
+  min-height: 220px;
   overflow: hidden;
 }
 
@@ -930,7 +943,7 @@ body {
   flex: 0.9;
   display: flex;
   flex-direction: column;
-  min-height: 240px;
+  min-height: 200px;
   overflow: hidden;
 }
 

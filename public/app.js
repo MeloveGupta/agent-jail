@@ -225,10 +225,21 @@ function createTraceEntryElement(entry, index) {
     div.appendChild(header);
     div.appendChild(body);
 
+    div.tabIndex = 0;
+    div.setAttribute('role', 'button');
+    div.setAttribute('aria-label', `Tool call ${entry.tool}, Status: ${badgeText}`);
+
     div.addEventListener('click', () => {
       document.querySelectorAll('.trace-tool-call').forEach(el => el.classList.remove('selected'));
       div.classList.add('selected');
       renderDecisionPanel(entry);
+    });
+
+    div.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        div.click();
+      }
     });
   } else if (entry.kind === 'done') {
     div.className = 'trace-entry trace-done';
