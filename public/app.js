@@ -1,4 +1,5 @@
 // Agent Jail Frontend Core Application
+// Second Design Pass: Polished Developer / Security Tool Experience
 // State machine: IDLE | RUNNING | ANIMATING | COMPLETE | RUN_FAILED | POLICY_INVALID
 
 const STATES = {
@@ -19,8 +20,7 @@ const appState = {
   activePolicy: '',
   trace: [],
   revealedCount: 0,
-  selectedToolCall: null,
-  animationAbortController: null
+  selectedToolCall: null
 };
 
 // DOM Elements
@@ -44,6 +44,17 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Utility: escape HTML
+function escapeHtml(str) {
+  if (typeof str !== 'string') return String(str);
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // State Management
 function setState(newState, details = {}) {
   appState.state = newState;
@@ -56,6 +67,7 @@ function setState(newState, details = {}) {
   const isBusy = newState === STATES.RUNNING || newState === STATES.ANIMATING;
   
   runBtn.disabled = isBusy;
+  runBtn.textContent = isBusy ? 'Running scenario...' : 'Run Scenario';
   savePolicyBtn.disabled = isBusy;
   resetPolicyBtn.disabled = isBusy;
   policyTextarea.readOnly = isBusy;
@@ -120,7 +132,7 @@ function selectScenario(scenarioId) {
   });
 }
 
-// Render Single Trace Entry
+// Render Single Trace Entry for Transcript
 function createTraceEntryElement(entry, index) {
   const div = document.createElement('div');
   div.dataset.index = index;
@@ -130,6 +142,11 @@ function createTraceEntryElement(entry, index) {
     const header = document.createElement('div');
     header.className = 'thought-header';
     
+    const label = document.createElement('span');
+    label.className = 'thought-label';
+    label.textContent = 'AGENT REASONING';
+    header.appendChild(label);
+
     if (entry.scripted) {
       const badge = document.createElement('span');
       badge.className = 'scripted-badge';
@@ -144,8 +161,8 @@ function createTraceEntryElement(entry, index) {
     div.appendChild(header);
     div.appendChild(text);
   } else if (entry.kind === 'tool_call') {
-    const statusClass = `tool-${(entry.status || 'unknown').toLowerCase()}`;
-    div.className = `trace-entry trace-tool-call ${statusClass}`;
+    const statusLower = (entry.status || 'unknown').toLowerCase();
+    div.className = `trace-entry trace-tool-call tool-${statusLower}`;
     
     // Add shake animation on DENY
     if (entry.status === 'DENY') {
@@ -155,19 +172,47 @@ function createTraceEntryElement(entry, index) {
     const header = document.createElement('div');
     header.className = 'tool-call-header';
 
+    const nameContainer = document.createElement('div');
+    nameContainer.className = 'tool-name-container';
+
     const name = document.createElement('span');
     name.className = 'tool-name-tag';
     name.textContent = entry.tool;
+    nameContainer.appendChild(name);
+
+    // Map status to clean descriptive badge label
+    let badgeText = entry.status;
+    if (entry.status === 'ALLOW') badgeText = 'AUTHORIZED';
+    else if (entry.status === 'DENY') badgeText = 'DENIED';
+    else if (entry.status === 'POLICY_ERROR') badgeText = 'POLICY ERROR';
+    else if (entry.status === 'UNKNOWN_TOOL') badgeText = 'UNKNOWN TOOL';
 
     const badge = document.createElement('span');
-    badge.className = `status-badge status-${(entry.status || '').toLowerCase()}`;
-    badge.textContent = entry.status;
+    badge.className = `status-badge status-${statusLower}`;
+    badge.textContent = badgeText;
 
-    header.appendChild(name);
+    header.appendChild(nameContainer);
     header.appendChild(badge);
 
     const body = document.createElement('div');
     body.className = 'tool-call-body';
+
+    // Tool execution state summary
+    const execState = document.createElement('div');
+    if (entry.status === 'ALLOW') {
+      execState.className = 'tool-exec-state state-allowed';
+      execState.textContent = 'POLICY ALLOWED → TOOL EXECUTED';
+    } else if (entry.status === 'DENY') {
+      execState.className = 'tool-exec-state state-blocked';
+      execState.textContent = 'NOT EXECUTED';
+    } else if (entry.status === 'POLICY_ERROR') {
+      execState.className = 'tool-exec-state state-error';
+      execState.textContent = 'NOT EXECUTED (FAIL CLOSED)';
+    } else if (entry.status === 'UNKNOWN_TOOL') {
+      execState.className = 'tool-exec-state state-unknown';
+      execState.textContent = 'NOT EXECUTED (UNKNOWN TOOL)';
+    }
+    body.appendChild(execState);
 
     if (entry.explanation) {
       const expl = document.createElement('div');
@@ -192,12 +237,101 @@ function createTraceEntryElement(entry, index) {
   return div;
 }
 
+// Render Structured Semantic Context Table
+function renderContextTable(context) {
+  if (!context || typeof context !== 'object' || Object.keys(context).length === 0) {
+    return `<div class="empty-context">No semantic context extracted for this tool call</div>`;
+  }
+
+  const entries = Object.entries(context);
+  const rows = entries.map(([key, val]) => {
+    let formattedVal = '';
+    let valClass = 'ctx-val';
+
+    if (typeof val === 'boolean') {
+      valClass += val ? ' ctx-val-true' : ' ctx-val-false';
+      formattedVal = val ? 'true' : 'false';
+    } else if (typeof val === 'number') {
+      valClass += ' ctx-val-number';
+      formattedVal = val.toLocaleString();
+    } else if (typeof val === 'string') {
+      if (val === 'DELETE' || val === 'DROP' || val === 'TRUNCATE') {
+        valClass += ' ctx-val-destructive';
+      } else if (val === 'SELECT') {
+        valClass += ' ctx-val-select';
+      }
+      formattedVal = escapeHtml(val);
+    } else if (val === null) {
+      formattedVal = 'null';
+    } else if (typeof val === 'object') {
+      formattedVal = escapeHtml(JSON.stringify(val));
+    } else {
+      formattedVal = escapeHtml(String(val));
+    }
+
+    return `
+      <tr>
+        <td class="ctx-key"><code>${escapeHtml(key)}</code></td>
+        <td class="${valClass}"><code>${formattedVal}</code></td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <table class="context-table">
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+    <details class="raw-details">
+      <summary class="raw-summary">View raw JSON</summary>
+      <pre class="code-block">${escapeHtml(JSON.stringify(context, null, 2))}</pre>
+    </details>
+  `;
+}
+
+// Render Structured Tool Arguments Table
+function renderArgsTable(args) {
+  if (!args || typeof args !== 'object' || Object.keys(args).length === 0) {
+    return `<div class="empty-context">No arguments provided</div>`;
+  }
+
+  const entries = Object.entries(args);
+  const rows = entries.map(([key, val]) => {
+    let formattedVal = '';
+    if (typeof val === 'object' && val !== null) {
+      formattedVal = escapeHtml(JSON.stringify(val));
+    } else {
+      formattedVal = escapeHtml(String(val));
+    }
+
+    return `
+      <tr>
+        <td class="arg-key"><code>${escapeHtml(key)}</code></td>
+        <td class="arg-val"><code>${formattedVal}</code></td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <table class="context-table args-table">
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+    <details class="raw-details">
+      <summary class="raw-summary">View raw JSON</summary>
+      <pre class="code-block">${escapeHtml(JSON.stringify(args, null, 2))}</pre>
+    </details>
+  `;
+}
+
 // Right-Pane: Render Decision & Evidence Panel
 function renderDecisionPanel(entry) {
   if (!entry || entry.kind !== 'tool_call') {
     decisionPanel.innerHTML = `
       <div class="decision-placeholder">
-        <p>Select a tool call in the transcript to inspect its authorization decision and semantic context.</p>
+        <p>Select a tool call in the transcript to inspect its authorization decision, policy reason, and semantic context evidence.</p>
       </div>
     `;
     return;
@@ -205,41 +339,154 @@ function renderDecisionPanel(entry) {
 
   appState.selectedToolCall = entry;
 
+  const statusLower = (entry.status || 'unknown').toLowerCase();
+  let statusBadgeLabel = entry.status;
+  if (entry.status === 'ALLOW') statusBadgeLabel = 'AUTHORIZED';
+  else if (entry.status === 'DENY') statusBadgeLabel = 'DENIED';
+  else if (entry.status === 'POLICY_ERROR') statusBadgeLabel = 'POLICY ERROR';
+  else if (entry.status === 'UNKNOWN_TOOL') statusBadgeLabel = 'UNKNOWN TOOL';
+
+  // 1. Execution Status Banner
+  let execBannerHtml = '';
+  if (entry.status === 'DENY') {
+    execBannerHtml = `
+      <div class="exec-banner exec-banner-deny">
+        <div class="exec-badge-row">
+          <span class="exec-status-tag tag-not-executed">NOT EXECUTED</span>
+          <span class="exec-summary">Action blocked before execution</span>
+        </div>
+        <p class="exec-desc">
+          The authorization decision was <strong>DENY</strong>. The tool call was halted before execution and the underlying database/system was not modified.
+        </p>
+      </div>
+    `;
+  } else if (entry.status === 'ALLOW') {
+    execBannerHtml = `
+      <div class="exec-banner exec-banner-allow">
+        <div class="exec-badge-row">
+          <span class="exec-status-tag tag-executed">POLICY ALLOWED → TOOL EXECUTED</span>
+          <span class="exec-summary">Authorized by Cedar policy</span>
+        </div>
+        <p class="exec-desc">
+          The authorization decision was <strong>ALLOW</strong>. Arguments were validated and the tool was executed by the agent runtime.
+        </p>
+      </div>
+    `;
+  } else if (entry.status === 'POLICY_ERROR') {
+    execBannerHtml = `
+      <div class="exec-banner exec-banner-error">
+        <div class="exec-badge-row">
+          <span class="exec-status-tag tag-error">NOT EXECUTED (FAIL CLOSED)</span>
+          <span class="exec-summary">Authorization engine error</span>
+        </div>
+        <p class="exec-desc">
+          Authorization engine encountered an error while evaluating policy context. In accordance with fail-closed security principles, the tool call was blocked without executing.
+        </p>
+      </div>
+    `;
+  } else if (entry.status === 'UNKNOWN_TOOL') {
+    execBannerHtml = `
+      <div class="exec-banner exec-banner-unknown">
+        <div class="exec-badge-row">
+          <span class="exec-status-tag tag-unknown">NOT EXECUTED</span>
+          <span class="exec-summary">Tool not registered</span>
+        </div>
+        <p class="exec-desc">
+          Planner requested an unregistered tool name. No authorization decision was made and no tool execution occurred.
+        </p>
+      </div>
+    `;
+  }
+
+  // 2. Policy Reason Section
   let reasonsHtml = '';
   if (entry.reasons && entry.reasons.length > 0) {
+    const isAllow = entry.status === 'ALLOW';
     reasonsHtml = `
-      <div>
-        <div class="field-label">Policy Reason</div>
+      <div class="evidence-block">
+        <div class="field-label">${isAllow ? 'Permitting Policy' : 'Policy Reason'}</div>
         <div class="policy-reasons-list">
-          ${entry.reasons.map(r => `<span class="policy-reason-tag">${escapeHtml(r)}</span>`).join('')}
+          ${entry.reasons.map(r => `
+            <div class="policy-reason-item">
+              <span class="policy-reason-tag ${isAllow ? 'policy-reason-allow' : ''}">${escapeHtml(r)}</span>
+              <span class="policy-reason-note">${isAllow ? 'Permitted by active Cedar policy' : 'Forbid policy matched context'}</span>
+            </div>
+          `).join('')}
         </div>
+        ${entry.explanation ? `<div class="tool-explanation">${escapeHtml(entry.explanation)}</div>` : ''}
       </div>
     `;
   } else if (entry.status === 'DENY') {
     reasonsHtml = `
-      <div>
+      <div class="evidence-block">
         <div class="field-label">Policy Reason</div>
-        <div class="default-deny-msg">DENY — no policy permits this action (default deny)</div>
+        <div class="default-deny-box">
+          <div class="default-deny-msg">DENY — no policy permits this action (default deny)</div>
+          <p class="default-deny-subnote">
+            Cedar operates on a strict default-deny model. Because no active permit policy matched this action and context, the request was denied.
+          </p>
+        </div>
+        ${entry.explanation ? `<div class="tool-explanation">${escapeHtml(entry.explanation)}</div>` : ''}
+      </div>
+    `;
+  } else if (entry.status === 'POLICY_ERROR') {
+    reasonsHtml = `
+      <div class="evidence-block">
+        <div class="field-label">Authorization Engine Error</div>
+        <div class="policy-error-msg">Fail closed: evaluation failed due to policy runtime error</div>
+        ${entry.errors && entry.errors.length > 0 ? `
+          <pre class="code-block code-block-error">${escapeHtml(JSON.stringify(entry.errors, null, 2))}</pre>
+        ` : ''}
+        ${entry.explanation ? `<div class="tool-explanation">${escapeHtml(entry.explanation)}</div>` : ''}
+      </div>
+    `;
+  } else if (entry.status === 'UNKNOWN_TOOL') {
+    reasonsHtml = `
+      <div class="evidence-block">
+        <div class="field-label">Registry Status</div>
+        <div class="unknown-tool-msg">Unregistered tool — no policy evaluated</div>
+        ${entry.explanation ? `<div class="tool-explanation">${escapeHtml(entry.explanation)}</div>` : ''}
       </div>
     `;
   }
 
+  // 3. Execution Result Section
   let resultHtml = '';
-  if (entry.result !== null && entry.result !== undefined) {
+  if (entry.status === 'ALLOW' && entry.result !== null && entry.result !== undefined) {
     resultHtml = `
-      <div>
-        <div class="field-label">Tool Result</div>
-        <pre class="code-block">${escapeHtml(JSON.stringify(entry.result, null, 2))}</pre>
+      <div class="evidence-block">
+        <div class="field-label">Tool Execution Result</div>
+        <pre class="code-block code-block-result">${escapeHtml(JSON.stringify(entry.result, null, 2))}</pre>
       </div>
     `;
-  }
-
-  let errorsHtml = '';
-  if (entry.errors && entry.errors.length > 0) {
-    errorsHtml = `
-      <div>
-        <div class="field-label">Errors</div>
-        <pre class="code-block" style="color: #ff7b72;">${escapeHtml(JSON.stringify(entry.errors, null, 2))}</pre>
+  } else if (entry.status === 'DENY') {
+    resultHtml = `
+      <div class="evidence-block">
+        <div class="field-label">Tool Execution Result</div>
+        <div class="result-blocked-note">
+          <span class="blocked-glyph">⊘</span>
+          <span>No execution output — tool call was denied before invocation.</span>
+        </div>
+      </div>
+    `;
+  } else if (entry.status === 'POLICY_ERROR') {
+    resultHtml = `
+      <div class="evidence-block">
+        <div class="field-label">Tool Execution Result</div>
+        <div class="result-blocked-note">
+          <span class="blocked-glyph" style="color: var(--color-error);">⚠</span>
+          <span>No execution output — blocked by fail-closed policy engine error.</span>
+        </div>
+      </div>
+    `;
+  } else if (entry.status === 'UNKNOWN_TOOL') {
+    resultHtml = `
+      <div class="evidence-block">
+        <div class="field-label">Tool Execution Result</div>
+        <div class="result-blocked-note">
+          <span class="blocked-glyph" style="color: var(--color-unknown);">⊘</span>
+          <span>No execution output — unregistered tool cannot be executed.</span>
+        </div>
       </div>
     `;
   }
@@ -248,42 +495,27 @@ function renderDecisionPanel(entry) {
     <div class="decision-card">
       <div class="decision-badge-row">
         <span class="decision-tool-name">${escapeHtml(entry.tool)}</span>
-        <span class="status-badge status-${(entry.status || '').toLowerCase()}">${escapeHtml(entry.status)}</span>
+        <span class="status-badge status-${statusLower}">${escapeHtml(statusBadgeLabel)}</span>
       </div>
 
-      <div>
-        <div class="field-label">Decision</div>
-        <div style="font-family: var(--font-mono); font-size: 14px; font-weight: 600;">
-          ${escapeHtml(entry.decision || 'n/a')}
-        </div>
-      </div>
+      ${execBannerHtml}
 
       ${reasonsHtml}
 
-      <div>
-        <div class="field-label">Semantic Context</div>
-        <pre class="code-block">${escapeHtml(JSON.stringify(entry.context || {}, null, 2))}</pre>
+      <div class="evidence-block">
+        <div class="field-label">Semantic Context Evidence</div>
+        <span class="section-hint">Derived by runtime inspection of data &amp; arguments before policy check:</span>
+        ${renderContextTable(entry.context)}
       </div>
 
-      <div>
-        <div class="field-label">Tool Arguments</div>
-        <pre class="code-block">${escapeHtml(JSON.stringify(entry.args || {}, null, 2))}</pre>
+      <div class="evidence-block">
+        <div class="field-label">Proposed Arguments</div>
+        ${renderArgsTable(entry.args)}
       </div>
 
       ${resultHtml}
-      ${errorsHtml}
     </div>
   `;
-}
-
-function escapeHtml(str) {
-  if (typeof str !== 'string') return String(str);
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 // Progressive Trace Animation (~700ms per visible entry)
@@ -306,7 +538,7 @@ async function animateTrace(trace) {
     appState.revealedCount = i + 1;
     transcriptCount.textContent = `${appState.revealedCount} of ${trace.length} entries`;
 
-    // If tool_call, inspect it in the Right Pane
+    // If tool_call, inspect it in the Right Pane immediately
     if (entry.kind === 'tool_call') {
       document.querySelectorAll('.trace-tool-call').forEach(el => el.classList.remove('selected'));
       elem.classList.add('selected');
@@ -431,6 +663,18 @@ async function resetPolicy() {
     alert(`Failed to reset policy: ${err.message}`);
   }
 }
+
+// Tab key handling for Cedar policy textarea
+policyTextarea.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = policyTextarea.selectionStart;
+    const end = policyTextarea.selectionEnd;
+    const val = policyTextarea.value;
+    policyTextarea.value = val.substring(0, start) + '  ' + val.substring(end);
+    policyTextarea.selectionStart = policyTextarea.selectionEnd = start + 2;
+  }
+});
 
 // Event Listeners
 scenarioCards.forEach(card => {
