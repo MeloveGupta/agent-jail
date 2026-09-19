@@ -16,7 +16,7 @@ export async function runAgent(scenarioId, brain) {
       scripted: true
     });
 
-    if (!TOOLS[step.tool]) {
+    if (!step.tool || !Object.hasOwn(TOOLS, step.tool)) {
       trace.push({
         kind: 'tool_call',
         tool: step.tool,
@@ -33,11 +33,11 @@ export async function runAgent(scenarioId, brain) {
       continue;
     }
 
-    const context = buildContext(step.tool, step.args);
-
+    let context = {};
     let verdict;
 
     try {
+      context = buildContext(step.tool, step.args);
       verdict = check(step.tool, context);
     } catch (e) {
       verdict = {
