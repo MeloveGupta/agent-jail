@@ -71,6 +71,7 @@ function setState(newState, details = {}) {
   savePolicyBtn.disabled = isBusy;
   resetPolicyBtn.disabled = isBusy;
   policyTextarea.readOnly = isBusy;
+  if (retryBtn) retryBtn.disabled = isBusy;
 
   scenarioCards.forEach(card => {
     const input = card.querySelector('input');
@@ -92,7 +93,7 @@ function setState(newState, details = {}) {
       failureMessage.textContent = `Run failed: ${details.error}`;
       failureBanner.classList.remove('hidden');
     }
-  } else if (newState !== STATES.IDLE) {
+  } else {
     failureBanner.classList.add('hidden');
   }
 }
